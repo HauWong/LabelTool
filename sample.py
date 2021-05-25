@@ -11,28 +11,39 @@ from utils import voc_sample_tool as vst
 from config.configs import *
 
 
-def make_samples_from_batch(image_dir, label_dir, save_dir, display_dir=None):
+def operate_batch(func, image_dir, label_dir, save_dir, **pars):
 
-    """ 批量制作样本
+    """ 批量操作
 
     Args:
+        func: 批量操作的函数
         image_dir: 原始影像目录
         label_dir: 标记文件目录，要求内部标记文件名与原始影像名对应
         save_dir: 保存目录
-        display_dir: 显示路径，默认为空
+        **pars: 与func函数对应的其他参数
     """
 
     files = os.listdir(label_dir)
     for f in files:
         lab_p = os.path.join(label_dir, f)
-        img_p = os.path.join(image_dir, '%s.tif' % os.path.splitext(f)[0])
-        if display_dir:
-            dsp_p = os.path.join(display_dir, '%s.png' % os.path.splitext(f)[0])
-        else:
-            dsp_p = None
-        save_p = os.path.join(save_dir, '%s.xml' % os.path.splitext(f)[0])
         envi_lab = label.EnviLabel(lab_p)
-        make_voc(envi_lab, img_p, save_p, dsp_p)
+        img_p = os.path.join(image_dir, '%s.tif' % os.path.splitext(f)[0])
+        if func.__name__ == "make_voc":
+            df_pars = {"display_dir": None, "split": True}
+            df_pars.update(pars)
+            dsp_p = None
+            if df_pars["display_dir"]:
+                dsp_p = os.path.join(df_pars["display_dir"], '%s.png' % os.path.splitext(f)[0])
+            save_p = os.path.join(save_dir, '%s.xml' % os.path.splitext(f)[0])
+            func(envi_lab, img_p, save_p, dsp_p, split=df_pars["split"])
+        elif func.__name__ == "cut_with_label":
+            par_n = ("mask", "size", "center", "count", "bias", "save_pos")
+            df_v = (False, None, False, 1, (0, 100), False)
+            df_pars = dict(zip(par_n, df_v))
+            df_pars.update(pars)
+            save_d = os.path.join(save_dir, os.path.splitext(f)[0])
+            func(envi_lab, img_p, save_d, df_pars["mask"], df_pars["size"], df_pars["center"],
+                 df_pars["count"], df_pars["bias"], df_pars["save_pos"])
 
 
 def make_voc(envi_label, image_path, save_path,
@@ -233,21 +244,22 @@ if __name__ == "__main__":
         return v.lower() in ("true", "t", "yes", "y", "1")
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('-f', dest="func", type=str, choices=["bs", "s", "c", "d"],
+    parser.add_argument('-f', dest="func", type=str, choices=["bs", "s", "bc", "c", "d"],
                         help="Choose function from cut_with_label[c], make_samples_from_batch[bs],"
                              "make_voc[s] and divide_samples[d].")
     parser.add_argument('-i', dest="img", type=str, help="Image path or image directory")
-    parser.add_argument('-l', dest="lab", type=str, default=None, help="[bs][s][c]Label path or label directory")
+    parser.add_argument('-l', dest="lab", type=str, default=None, help="[bs][s][bc][c]Label path or label directory")
     parser.add_argument('-s', dest="save", type=str, help="Save path or save directory")
 
     parser.add_argument('-d', dest="disp", type=str, default=None, help="[bs][s]Display path or display directory")
+    parser.add_argument('-sp', dest="split", type=str, default=True, help="[bs][s]Split or not")
 
-    parser.add_argument('--mask', type=str_to_bool, default=True, help="[c]Mask or not")
-    parser.add_argument('--size', nargs=2, type=int, default=None, help="[c]Size of cutting region")
-    parser.add_argument('--center', type=str_to_bool, default=False, help="[c]Center of cutting region")
-    parser.add_argument('--count', type=int, default=1, help="[c]Count of cutting regions")
-    parser.add_argument('--bias', nargs=2, type=float, default=(0, 100), help="[c]Bias of center of cutting region")
-    parser.add_argument('--pos', type=bool, default=False, help="[c]Save positions of region or not")
+    parser.add_argument('--mask', type=str_to_bool, default=True, help="[bc][c]Mask or not")
+    parser.add_argument('--size', nargs=2, type=int, default=None, help="[bc][c]Size of cutting region")
+    parser.add_argument('--center', type=str_to_bool, default=False, help="[bc][c]Center of cutting region")
+    parser.add_argument('--count', type=int, default=1, help="[bc][c]Count of cutting regions")
+    parser.add_argument('--bias', nargs=2, type=float, default=(0, 100), help="[bc][c]Bias of center of cutting region")
+    parser.add_argument('--pos', type=bool, default=False, help="[bc][c]Save positions of region or not")
 
     parser.add_argument('--name', type=str, default='', help="[d]Category name")
     parser.add_argument('--types', nargs=2, type=str, default=('train', 'val', 'test'),
@@ -261,7 +273,14 @@ if __name__ == "__main__":
     lab = args.lab
     save = args.save
 
-    if args.func == "c":
+    if args.func == "bc":
+        if not lab:
+            raise ValueError("Must give one label to cut at least.")
+        mask, size, center, count, bias, pos = args.mask, args.size, args.center, args.count, args.bias, args.pos
+        operate_batch(cut_with_label, img, lab, save,
+                      mask=mask, size=size, center=center,
+                      count=count, bias=bias, save_pos=pos)
+    elif args.func == "c":
         if not lab:
             raise ValueError("Must give one label to cut at least.")
         mask, size, center, count, bias, pos = args.mask, args.size, args.center, args.count, args.bias, args.pos
@@ -271,13 +290,16 @@ if __name__ == "__main__":
         if not lab:
             raise ValueError("Must give one label to make sample at least.")
         disp = args.disp
-        make_samples_from_batch(img, lab, save, disp)
+        sp = args.split
+        operate_batch(make_voc, img, lab, save,
+                      display_dir=disp, split=sp)
     elif args.func == "s":
         if not lab:
             raise ValueError("Must give one label to make VOC sample.")
         disp = args.disp
+        sp = args.split
         envi_lab = label.EnviLabel(lab)
-        make_voc(envi_lab, img, save, disp)
+        make_voc(envi_lab, img, save, display_path=disp, split=sp)
     elif args.func == "d":
         name, types, pct, shuffle = args.name, args.types, args.pct, args.shuffle
         divide_samples(img, save, name, types, pct, shuffle)
