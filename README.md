@@ -79,3 +79,12 @@
     ```
     其他参数有默认设置，详细可查看help。
 
+### 其他
+
+该程序设计了一个新的类——EnviLabel，用于执行与ENVI标注文件相关的一些操作以及获取标注文件的一些基本信息。
+在EviLabel实现过程中，隐藏了一个小小的创新点，即采用一种新的提取连通区的方式从二值图中提取多边形，具体详见label.py -> EnviLabel -> extract_from_img(self, path) -> # extraction以及utils -> convex_hell.py -> array2vector(array)。
+
+EnviLabel中还有一些内容需要完善，主要集中在对地理坐标的适配上，后期可能会完善。
+
+这个小小程序希望能对诸君有所帮助。
+交流邮箱：haowang_rs@foxmail.com
